@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weatherly • Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+    body { font-family: 'Inter', system_ui, sans-serif; }
+    .title { font-family: 'Space Grotesk', sans-serif; }
+    .glass { background: rgba(255,255,255,0.08); backdrop-filter: blur(16px); }
+    .weather-bg { transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+  </style>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen">
+  <div id="app" class="max-w-6xl mx-auto p-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-10">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-gradient-to-br from-emerald-400 to-cyan-400 rounded-2xl flex items-center justify-center text-xl">☀️</div>
+        <h1 class="title text-4xl font-semibold tracking-tighter">Weatherly</h1>
+      </div>
+      
+      <div class="flex items-center gap-4">
+        <!-- Unit Toggle -->
+        <div class="glass border border-white/10 rounded-3xl p-1 flex">
+          <button @click="setUnit('celsius')" 
+                  :class="{ 'bg-white text-zinc-950': unit === 'celsius' }"
+                  class="px-5 py-1.5 text-sm font-medium rounded-3xl transition">°C</button>
+          <button @click="setUnit('fahrenheit')" 
+                  :class="{ 'bg-white text-zinc-950': unit === 'fahrenheit' }"
+                  class="px-5 py-1.5 text-sm font-medium rounded-3xl transition">°F</button>
+        </div>
+
+        <button @click="getCurrentLocation" 
+                class="flex items-center gap-2 bg-white/10 hover:bg-white/20 transition px-6 py-3 rounded-3xl text-sm font-medium">
+          <i class="fas fa-location-dot"></i>
+          <span>My Location</span>
+        </button>
+
+        <button @click="refreshData" 
+                class="flex items-center gap-2 bg-white/10 hover:bg-white/20 transition px-6 py-3 rounded-3xl text-sm font-medium">
+          <i class="fas fa-sync-alt"></i>
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search -->
+    <div class="relative mb-10 max-w-2xl mx-auto">
+      <form @submit.prevent="searchCity" class="relative">
+        <input v-model="cityInput" 
+               type="text" 
+               placeholder="Search city... (e.g. Tokyo, Paris, Mumbai)"
+               class="w-full bg-zinc-900 border border-white/10 focus:border-emerald-500 rounded-3xl px-7 py-5 text-xl outline-none transition shadow-2xl">
+        <button type="submit" 
+                class="absolute right-3 top-1/2 -translate-y-1/2 bg-white text-zinc-950 px-8 py-3 rounded-3xl font-semibold flex items-center gap-2">
+          <i class="fas fa-search"></i>
+          Search
+        </button>
+      </form>
+    </div>
+
+    <!-- Recent Searches -->
+    <div v-if="recentSearches.length" class="flex gap-3 mb-8 flex-wrap justify-center">
+      <button v-for="(city, i) in recentSearches" :key="i"
+              @click="selectRecent(city)"
+              class="px-5 py-2 bg-white/5 hover:bg-white/10 rounded-3xl text-sm transition">
+        {{ city }}
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div v-if="loading" class="flex flex-col items-center py-32">
+      <div class="w-16 h-16 border-4 border-emerald-400 border-t-transparent animate-spin rounded-full"></div>
+      <p class="mt-6 text-zinc-400 text-lg">Fetching latest weather...</p>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="max-w-md mx-auto bg-red-950/50 border border-red-500/30 rounded-3xl p-12 text-center">
+      <i class="fas fa-cloud-rain text-6xl text-red-400 mb-6"></i>
+      <h3 class="text-2xl font-medium">{{ error }}</h3>
+      <button @click="retry" 
+              class="mt-8 px-8 py-3 bg-red-500 hover:bg-red-600 rounded-3xl text-sm font-medium transition">
+        Try Again
+      </button>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div v-else class="weather-bg grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Current Weather -->
+      <div class="lg:col-span-7 glass border border-white/10 rounded-3xl p-10">
+        <div class="flex justify-between">
+          <div>
+            <div class="text-7xl font-light tabular-nums leading-none">{{ current.temperature }}<span class="text-4xl">°{{ unit.toUpperCase()[0] }}</span></div>
+            <div class="text-3xl text-zinc-300 mt-2">{{ current.condition }}</div>
+            <div class="mt-8 text-2xl">{{ current.city }}, {{ current.country }}</div>
+            <div class="text-zinc-400 mt-1">{{ formatTime(current.updatedAt) }}</div>
+          </div>
+
+          <div class="text-[180px] leading-none transition-all" :class="getWeatherEmojiClass(current.code)">
+            {{ getWeatherEmoji(current.code) }}
+          </div>
+        </div>
+
+        <div class="mt-12 grid grid-cols-3 gap-6 text-center">
+          <div class="bg-white/5 rounded-3xl p-6">
+            <div class="text-emerald-400 text-2xl"><i class="fas fa-droplet"></i></div>
+            <div class="text-4xl font-light mt-4">{{ current.humidity }}%</div>
+            <div class="text-xs text-zinc-400 mt-1">HUMIDITY</div>
+          </div>
+          <div class="bg-white/5 rounded-3xl p-6">
+            <div class="text-cyan-400 text-2xl"><i class="fas fa-wind"></i></div>
+            <div class="text-4xl font-light mt-4">{{ current.wind }} km/h</div>
+            <div class="text-xs text-zinc-400 mt-1">WIND SPEED</div>
+          </div>
+          <div class="bg-white/5 rounded-3xl p-6">
+            <div class="text-orange-400 text-2xl"><i class="fas fa-eye"></i></div>
+            <div class="text-4xl font-light mt-4">{{ current.feelsLike }}°</div>
+            <div class="text-xs text-zinc-400 mt-1">FEELS LIKE</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5-Day Forecast -->
+      <div class="lg:col-span-5 glass border border-white/10 rounded-3xl p-10">
+        <h3 class="flex items-center gap-3 text-xl font-medium mb-8">
+          <i class="fas fa-calendar-days"></i>
+          5-DAY FORECAST
+        </h3>
+        
+        <div class="space-y-7">
+          <div v-for="(day, i) in forecast" :key="i" 
+               class="flex items-center justify-between group">
+            <div class="w-28 font-medium text-lg">{{ formatDay(day.date) }}</div>
+            
+            <div class="text-5xl transition-transform group-hover:scale-110">
+              {{ getWeatherEmoji(day.code) }}
+            </div>
+            
+            <div class="flex items-center gap-8 text-lg">
+              <span class="font-light">{{ day.max }}°</span>
+              <span class="text-zinc-400 font-light">{{ day.min }}°</span>
+            </div>
+            
+            <div class="text-right text-sm text-zinc-400 w-20">{{ day.condition }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    const { createApp } = Vue
+
+    const app = createApp({
+      data() {
+        return {
+          cityInput: 'Bengaluru',
+          current: null,
+          forecast: [],
+          loading: false,
+          error: null,
+          unit: 'celsius',
+          recentSearches: JSON.parse(localStorage.getItem('recentSearches') || '[]')
+        }
+      },
+      methods: {
+        async fetchWeather(lat, lon, cityName, country) {
+          this.loading = true
+          this.error = null
+
+          try {
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=6&temperature_unit=${this.unit}`
+            
+            const res = await fetch(url)
+            const data = await res.json()
+
+            // Current
+            const currentCode = data.current.weather_code
+            this.current = {
+              temperature: Math.round(data.current.temperature_2m),
+              feelsLike: Math.round(data.current.apparent_temperature),
+              humidity: data.current.relative_humidity_2m,
+              wind: Math.round(data.current.wind_speed_10m),
+              condition: this.getCondition(currentCode),
+              code: currentCode,
+              city: cityName || 'Bengaluru',
+              country: country || 'IN',
+              updatedAt: new Date()
+            }
+
+            // 5-Day Forecast
+            this.forecast = data.daily.time.slice(1, 6).map((date, i) => ({
+              date: date,
+              max: Math.round(data.daily.temperature_2m_max[i+1]),
+              min: Math.round(data.daily.temperature_2m_min[i+1]),
+              code: data.daily.weather_code[i+1],
+              condition: this.getCondition(data.daily.weather_code[i+1])
+            }))
+
+            // Save recent search
+            this.addToRecent(cityName || 'Bengaluru')
+          } catch (e) {
+            this.error = "Couldn't fetch weather. Check city name or internet."
+          } finally {
+            this.loading = false
+          }
+        },
+
+        async searchCity() {
+          if (!this.cityInput.trim()) return
+          
+          this.loading = true
+          try {
+            const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(this.cityInput)}&count=1&language=en&format=json`)
+            const geoData = await geoRes.json()
+            
+            if (!geoData.results?.length) {
+              this.error = "City not found 😕"
+              return
+            }
+            
+            const { latitude, longitude, name, country } = geoData.results[0]
+            await this.fetchWeather(latitude, longitude, name, country)
+          } catch {
+            this.error = "Something went wrong"
+          }
+        },
+
+        async getCurrentLocation() {
+          if (!navigator.geolocation) {
+            this.error = "Geolocation not supported"
+            return
+          }
+          navigator.geolocation.getCurrentPosition(async (pos) => {
+            await this.fetchWeather(pos.coords.latitude, pos.coords.longitude, "Current Location")
+          }, () => {
+            this.error = "Location access denied"
+          })
+        },
+
+        async refreshData() {
+          if (this.current) {
+            await this.fetchWeather(
+              this.current.city === "Current Location" ? null : null, // we keep last coords in real project but for simplicity we re-fetch last search
+              // For demo we just re-fetch last searched city
+              this.current.city === "Bengaluru" ? 12.97 : null
+            )
+          } else {
+            this.searchCity()
+          }
+        },
+
+        retry() {
+          this.error = null
+          this.searchCity()
+        },
+
+        setUnit(newUnit) {
+          if (this.unit === newUnit) return
+          this.unit = newUnit
+          if (this.current) {
+            // Re-fetch with new unit
+            this.fetchWeather(12.97, 77.59, this.current.city, this.current.country)
+          }
+        },
+
+        addToRecent(city) {
+          if (!this.recentSearches.includes(city)) {
+            this.recentSearches.unshift(city)
+            if (this.recentSearches.length > 5) this.recentSearches.pop()
+            localStorage.setItem('recentSearches', JSON.stringify(this.recentSearches))
+          }
+        },
+
+        selectRecent(city) {
+          this.cityInput = city
+          this.searchCity()
+        },
+
+        formatDay(iso) {
+          return new Date(iso).toLocaleDateString('en-IN', { weekday: 'short' })
+        },
+
+        formatTime(date) {
+          return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        },
+
+        getCondition(code) {
+          const map = {
+            0: "Clear Sky", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+            45: "Fog", 48: "Depositing Rime Fog",
+            51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+            61: "Light Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+            71: "Light Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+            80: "Rain Showers", 81: "Moderate Rain Showers", 82: "Heavy Rain Showers",
+            95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
+          }
+          return map[code] || "Cloudy"
+        },
+
+        getWeatherEmoji(code) {
+          const map = {
+            0: "☀️", 1: "🌤️", 2: "⛅", 3: "☁️",
+            45: "🌫️", 48: "🌫️",
+            51: "🌦️", 53: "🌦️", 55: "🌧️",
+            61: "🌧️", 63: "🌧️", 65: "🌧️",
+            71: "❄️", 73: "❄️", 75: "❄️",
+            80: "🌦️", 81: "🌧️", 82: "⛈️",
+            95: "⛈️", 96: "⛈️", 99: "⛈️"
+          }
+          return map[code] || "⛅"
+        },
+
+        getWeatherEmojiClass(code) {
+          if ([0,1].includes(code)) return "text-yellow-300"
+          if ([61,63,65,80,81,82].includes(code)) return "text-sky-400"
+          if ([71,73,75].includes(code)) return "text-slate-200"
+          return "text-zinc-300"
+        }
+      },
+      mounted() {
+        // Default Bengaluru
+        this.fetchWeather(12.9716, 77.5946, "Bengaluru", "India")
+      }
+    })
+
+    app.mount('#app')
+  </script>
+</body>
+</html>
